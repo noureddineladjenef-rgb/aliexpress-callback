@@ -13,12 +13,12 @@ TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 # إعدادات AliExpress Affiliate
 ALI_APP_KEY = os.getenv("ALI_APP_KEY")
 ALI_APP_SECRET = os.getenv("ALI_APP_SECRET")
-ALI_TRACKING_ID = os.getenv("ALI_TRACKING_ID")  # مثال: 503368
+ALI_TRACKING_ID = os.getenv("ALI_TRACKING_ID")
 
-# دالة إرسال رسالة إلى تيليجرام
+# إرسال رسالة إلى تيليجرام
 def send_telegram_message(text, parse_mode="Markdown"):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("❌ متغيرات تيليجرام غير موجودة")
+        print("❌ متغيرات تيليجرام ناقصة")
         return False
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
@@ -35,7 +35,7 @@ def send_telegram_message(text, parse_mode="Markdown"):
         print(f"❌ Telegram error: {e}")
         return False
 
-# دالة تحويل رابط إلى أفلييت
+# تحويل رابط إلى أفلييت
 def convert_to_affiliate_link(product_url):
     api_url = "https://api.aliexpress.com/openapi/param2/2/portals.open/api.getPromotionLinks"
     params = {
@@ -45,16 +45,19 @@ def convert_to_affiliate_link(product_url):
     }
     try:
         r = requests.get(api_url, params=params, timeout=5)
+        print("📡 رد AliExpress API:", r.text)
         data = r.json()
         promo_link = data["result"]["promotion_links"][0]["promotion_link"]
+        print("🔗 رابط الأفلييت المحول:", promo_link)
         return promo_link
     except Exception as e:
         print(f"❌ Affiliate error: {e}")
-        return product_url  # fallback: يرجع الرابط الأصلي
+        return product_url  # fallback
 
 # تخصيص الرسالة حسب نوع الحدث
 def format_event_message(event_type, payload):
     if "product_url" in payload:
+        print("📥 رابط المنتج الأصلي:", payload["product_url"])
         affiliate_link = convert_to_affiliate_link(payload["product_url"])
         return f"🔗 رابط الأفلييت:\n{affiliate_link}"
 
