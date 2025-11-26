@@ -1,6 +1,7 @@
 import os
 import json
 import requests
+import hashlib
 from flask import Flask, request
 
 app = Flask(__name__)
@@ -14,6 +15,12 @@ TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 ALI_APP_KEY = os.getenv("ALI_APP_KEY")
 ALI_APP_SECRET = os.getenv("ALI_APP_SECRET")
 ALI_TRACKING_ID = os.getenv("ALI_TRACKING_ID")
+
+# توليد التوقيع
+def generate_signature(app_secret, params):
+    sorted_params = sorted(params.items())
+    base_string = app_secret + ''.join(f"{k}{v}" for k, v in sorted_params) + app_secret
+    return hashlib.md5(base_string.encode('utf-8')).hexdigest().upper()
 
 # إرسال رسالة إلى تيليجرام
 def send_telegram_message(text, parse_mode="Markdown"):
@@ -43,6 +50,9 @@ def convert_to_affiliate_link(product_url):
         "tracking_id": ALI_TRACKING_ID,
         "urls": product_url
     }
+    sign = generate_signature(ALI_APP_SECRET, params)
+    params["sign"] = sign
+
     try:
         r = requests.get(api_url, params=params, timeout=5)
         print("📡 رد AliExpress API:", r.text)
@@ -52,7 +62,7 @@ def convert_to_affiliate_link(product_url):
         return promo_link
     except Exception as e:
         print(f"❌ Affiliate error: {e}")
-        return product_url  # fallback
+        return product_url
 
 # تخصيص الرسالة حسب نوع الحدث
 def format_event_message(event_type, payload):
@@ -61,26 +71,9 @@ def format_event_message(event_type, payload):
         affiliate_link = convert_to_affiliate_link(payload["product_url"])
         return f"🔗 رابط الأفلييت:\n{affiliate_link}"
 
-    if event_type == "order_created":
-        order_id = payload.get("order_id", "غير معروف")
-        amount = payload.get("amount", "؟")
-        return f"🛒 تم إنشاء طلب جديد!\nرقم الطلب: `{order_id}`\nالقيمة: `{amount}`"
-    
-    elif event_type == "order_shipped":
-        order_id = payload.get("order_id", "غير معروف")
-        tracking = payload.get("tracking_number", "غير متوفر")
-        date = payload.get("ship_date", "غير محدد")
-        return f"📦 تم شحن الطلب رقم `{order_id}`\nرقم التتبع: `{tracking}`\nتاريخ الشحن: `{date}`"
-    
-    elif event_type == "product_updated":
-        name = payload.get("product_name", "منتج غير معروف")
-        price = payload.get("new_price", "؟")
-        return f"🛍️ تم تحديث منتج:\n`{name}`\nالسعر الجديد: `{price}`"
-    
-    else:
-        title = f"*AliExpress Event:* `{event_type or 'unknown'}`"
-        body = f"```json\n{json.dumps(payload or {}, ensure_ascii=False, indent=2)}\n```"
-        return f"{title}\n{body}"
+    title = f"*AliExpress Event:* `{event_type or 'unknown'}`"
+    body = f"```json\n{json.dumps(payload or {}, ensure_ascii=False, indent=2)}\n```"
+    return f"{title}\n{body}"
 
 # نقطة استقبال الأحداث
 @app.route('/api/callback', methods=['POST'])
