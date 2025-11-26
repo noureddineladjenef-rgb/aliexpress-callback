@@ -5,7 +5,7 @@ from flask import Flask, request
 
 app = Flask(__name__)
 
-# متغيرات البيئة من Render
+# قراءة المتغيرات من بيئة Render
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -13,7 +13,7 @@ TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 # دالة إرسال رسالة إلى تيليجرام
 def send_telegram_message(text, parse_mode="Markdown"):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("❌ Telegram env vars missing")
+        print("❌ متغيرات تيليجرام غير موجودة")
         return False
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
@@ -22,9 +22,10 @@ def send_telegram_message(text, parse_mode="Markdown"):
         "disable_web_page_preview": True
     }
     try:
-        r = requests.post(TELEGRAM_API, json=payload, timeout=5)
-        print(f"✅ Telegram status: {r.status_code}")
-        return r.status_code == 200
+        response = requests.post(TELEGRAM_API, json=payload, timeout=5)
+        print(f"✅ Telegram status: {response.status_code}")
+        print(f"📨 Telegram response: {response.text}")
+        return response.status_code == 200
     except Exception as e:
         print(f"❌ Telegram error: {e}")
         return False
@@ -58,6 +59,6 @@ def callback():
         print(f"❌ Callback error: {e}")
         return 'OK', 200  # لا تفشل أمام AliExpress
 
-# تشغيل التطبيق على 0.0.0.0 ليعمل على Render
+# تشغيل التطبيق على Render
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
