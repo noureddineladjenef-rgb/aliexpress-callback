@@ -24,9 +24,6 @@ def generate_signature(app_secret, params):
 
 # إرسال رسالة إلى تيليجرام
 def send_telegram_message(text, parse_mode="Markdown"):
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("❌ متغيرات تيليجرام ناقصة")
-        return False
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": text,
@@ -36,19 +33,18 @@ def send_telegram_message(text, parse_mode="Markdown"):
     try:
         response = requests.post(TELEGRAM_API, json=payload, timeout=5)
         print(f"✅ Telegram status: {response.status_code}")
-        print(f"📨 Telegram response: {response.text}")
         return response.status_code == 200
     except Exception as e:
         print(f"❌ Telegram error: {e}")
         return False
 
-# تحويل رابط إلى أفلييت
-def convert_to_affiliate_link(product_url):
+# تحويل روابط إلى أفلييت
+def convert_to_affiliate_links(urls):
     api_url = "https://api.aliexpress.com/openapi/param2/2/portals.open/api.getPromotionLinks"
     params = {
         "app_key": ALI_APP_KEY,
         "tracking_id": ALI_TRACKING_ID,
-        "urls": product_url
+        "urls": ','.join(urls)  # دعم عدة روابط
     }
     sign = generate_signature(ALI_APP_SECRET, params)
     params["sign"] = sign
@@ -57,48 +53,46 @@ def convert_to_affiliate_link(product_url):
         r = requests.get(api_url, params=params, timeout=5)
         print("📡 رد AliExpress API:", r.text)
         data = r.json()
-        promo_link = data["result"]["promotion_links"][0]["promotion_link"]
-        print("🔗 رابط الأفلييت المحول:", promo_link)
-        return promo_link
+        links = [item["promotion_link"] for item in data["result"]["promotion_links"]]
+        return links
     except Exception as e:
         print(f"❌ Affiliate error: {e}")
-        return product_url
+        return urls
 
-# تخصيص الرسالة حسب نوع الحدث
+# تخصيص الرسالة
 def format_event_message(event_type, payload):
-    if "product_url" in payload:
-        print("📥 رابط المنتج الأصلي:", payload["product_url"])
-        affiliate_link = convert_to_affiliate_link(payload["product_url"])
-        return f"🔗 رابط الأفلييت:\n{affiliate_link}"
+    if "urls" in payload:
+        print("📥 روابط المنتجات:", payload["urls"])
+        affiliate_links = convert_to_affiliate_links(payload["urls"])
+        msg = "🔗 روابط الأفلييت:\n" + "\n".join(affiliate_links)
+        return msg
 
-    title = f"*AliExpress Event:* `{event_type or 'unknown'}`"
-    body = f"```json\n{json.dumps(payload or {}, ensure_ascii=False, indent=2)}\n```"
-    return f"{title}\n{body}"
+    if "product_url" in payload:
+        affiliate_links = convert_to_affiliate_links([payload["product_url"]])
+        return f"🔗 رابط الأفلييت:\n{affiliate_links[0]}"
+
+    return f"*AliExpress Event:* `{event_type}`\n```json\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n```"
 
 # نقطة استقبال الأحداث
 @app.route('/api/callback', methods=['POST'])
 def callback():
-    try:
-        event_type = request.headers.get('x-ae-event')
-        payload = request.get_json(silent=True)
+    event_type = request.headers.get('x-ae-event')
+    payload = request.get_json(silent=True)
 
-        print(f"📦 Event: {event_type}")
-        print(f"📄 Payload: {payload}")
+    print(f"📦 Event: {event_type}")
+    print(f"📄 Payload: {payload}")
 
-        msg = format_event_message(event_type, payload)
-        send_telegram_message(msg)
+    msg = format_event_message(event_type, payload)
+    send_telegram_message(msg)
 
-        return 'OK', 200
-    except Exception as e:
-        print(f"❌ Callback error: {e}")
-        return 'OK', 200
+    return 'OK', 200
 
 # نقطة اختبار
 @app.route('/test', methods=['GET'])
 def test_telegram():
-    msg = "✅ اختبار مباشر من /test يا نور الدين"
-    success = send_telegram_message(msg)
-    return "تم الإرسال" if success else "فشل الإرسال"
+    msg = "✅ اختبار متعدد الروابط من /test يا نور الدين"
+    send_telegram_message(msg)
+    return "تم الإرسال"
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
