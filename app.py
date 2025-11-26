@@ -12,6 +12,8 @@ TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 
 # دالة إرسال رسالة إلى تيليجرام
 def send_telegram_message(text, parse_mode="Markdown"):
+    print(f"📌 TOKEN: {TELEGRAM_TOKEN}")
+    print(f"📌 CHAT_ID: {TELEGRAM_CHAT_ID}")
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         print("❌ متغيرات تيليجرام غير موجودة")
         return False
@@ -57,7 +59,14 @@ def callback():
         return 'OK', 200
     except Exception as e:
         print(f"❌ Callback error: {e}")
-        return 'OK', 200  # لا تفشل أمام AliExpress
+        return 'OK', 200
+
+# نقطة اختبار مباشرة
+@app.route('/test', methods=['GET'])
+def test_telegram():
+    msg = "✅ اختبار مباشر من /test يا نور الدين"
+    success = send_telegram_message(msg)
+    return "تم الإرسال" if success else "فشل الإرسال"
 
 # تشغيل التطبيق على Render
 if __name__ == '__main__':
