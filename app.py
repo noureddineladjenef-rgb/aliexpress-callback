@@ -1,148 +1,91 @@
 import os
 import json
-import time
-import hmac
-import hashlib
-import base64
 import requests
+import hashlib
 from flask import Flask, request
 
 app = Flask(__name__)
 
-# ==========================
-#   TELEGRAM SETTINGS
-# ==========================
+# إعدادات تيليجرام
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-TELEGRAM_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
-
-# ==========================
-#   AE API SETTINGS
-# ==========================
+# إعدادات AliExpress Affiliate
 ALI_APP_KEY = os.getenv("ALI_APP_KEY")
 ALI_APP_SECRET = os.getenv("ALI_APP_SECRET")
 ALI_TRACKING_ID = os.getenv("ALI_TRACKING_ID", "default")
 
-AE_API_URL = "https://api.aliexpress.com/sync"
+def generate_signature(app_secret, params):
+    sorted_params = sorted(params.items())
+    base_string = app_secret + ''.join(f"{k}{v}" for k, v in sorted_params) + app_secret
+    return hashlib.md5(base_string.encode('utf-8')).hexdigest().upper()
 
-
-# ==========================
-#   SIGNATURE GENERATION
-# ==========================
-def generate_signature(app_secret, data_str):
-    h = hmac.new(app_secret.encode("utf-8"),
-                 data_str.encode("utf-8"),
-                 digestmod=hashlib.sha256)
-    return base64.b64encode(h.digest()).decode()
-
-
-# ==========================
-#   TELEGRAM SENDER
-# ==========================
-def send_telegram_message(text):
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": text,
-        "parse_mode": "Markdown",
-        "disable_web_page_preview": True
+def convert_to_affiliate_links(urls):
+    api_url = "https://api.aliexpress.com/openapi/param2/2/portals.open/api.getPromotionLinks"
+    params = {
+        "app_key": ALI_APP_KEY,
+        "tracking_id": ALI_TRACKING_ID,
+        "urls": ','.join(urls)
     }
-    try:
-        r = requests.post(TELEGRAM_URL, json=payload, timeout=5)
-        print("Telegram:", r.text)
-    except Exception as e:
-        print("Telegram Error:", e)
-
-
-# ==========================
-#   ALIEXPRESS LINK GENERATOR
-# ==========================
-def generate_affiliate_links(url_list):
-
-    body = {
-        "promotion_link_request": {
-            "tracking_id": ALI_TRACKING_ID,
-            "source_values": url_list
-        }
-    }
-
-    body_str = json.dumps(body, separators=(',', ':'))
-    data_to_sign = f"{ALI_APP_KEY}{body_str}"
-    signature = generate_signature(ALI_APP_SECRET, data_to_sign)
-
-    headers = {
-        "Content-Type": "application/json",
-        "x-ae-app-key": ALI_APP_KEY,
-        "x-ae-signature": signature
-    }
-
-    r = requests.post(AE_API_URL, headers=headers, data=body_str)
-    print("AliExpress API Response:", r.text)
+    params["sign"] = generate_signature(ALI_APP_SECRET, params)
 
     try:
-        jd = r.json()
-
-        links = []
-        promotion_list = jd["resp_result"]["result"]["promotion_links"]
-
-        for item in promotion_list:
-            links.append(item["promotion_link"])
-
+        r = requests.get(api_url, params=params)
+        print("AliExpress API response:", r.text)
+        data = r.json()
+        links = [item["promotion_link"] for item in data["result"]["promotion_links"]]
         return links
-
     except:
-        return url_list
+        return urls
 
+def send_message(chat_id, text):
+    requests.post(f"{TELEGRAM_API}/sendMessage", json={
+        "chat_id": chat_id,
+        "text": text,
+        "disable_web_page_preview": True
+    })
 
-# ==========================
-#   EVENT FORMATTER
-# ==========================
-def format_event_message(event_type, payload):
+# =======================
+#  استقبال رسائل التلغرام
+# =======================
+@app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
+def telegram_webhook():
+    update = request.get_json()
+    print(update)
 
-    if not payload:
-        return "📭 لا يوجد Payload"
+    if "message" in update:
+        chat_id = update["message"]["chat"]["id"]
+        text = update["message"].get("text", "")
 
-    # Payload فيه روابط مباشرة
-    if "urls" in payload:
-        urls = payload["urls"]
-        aff = generate_affiliate_links(urls)
-        return "🔗 *روابط الأفلييت:*\n" + "\n".join(aff)
+        # استخراج أي رابط من الرسالة
+        urls = [word for word in text.split() if "aliexpress" in word or "a.aliexpress" in word]
 
-    if "product_url" in payload:
-        aff = generate_affiliate_links([payload["product_url"]])
-        return "🔗 *الرابط:* \n" + aff[0]
+        if urls:
+            aff_links = convert_to_affiliate_links(urls)
+            msg = "🔗 روابط الأفلييت:\n" + "\n".join(aff_links)
+            send_message(chat_id, msg)
+        else:
+            send_message(chat_id, "أرسل رابط AliExpress لتحويله 🌟")
 
-    return f"*AliExpress Event:* `{event_type}`"
+    return "OK"
 
-
-# ==========================
-#   WEBHOOK ROUTE
-# ==========================
-@app.route('/api/callback', methods=['POST'])
+# =======================
+#  AliExpress Callback
+# =======================
+@app.route("/api/callback", methods=["POST"])
 def callback():
-    event = request.headers.get("x-ae-event")
-    payload = request.get_json(silent=True)
+    event_type = request.headers.get('x-ae-event')
+    payload = request.json
+    print("Event:", event_type, "Payload:", payload)
 
-    print("EVENT:", event)
-    print("PAYLOAD:", payload)
+    message = f"📦 Event: {event_type}\n```json\n{json.dumps(payload, indent=2)}\n```"
+    send_message(os.getenv("TELEGRAM_CHAT_ID"), message)
+    return "OK"
 
-    msg = format_event_message(event, payload)
-    send_telegram_message(msg)
-
-    return "OK", 200
-
-
-# ==========================
-#   TEST ROUTE
-# ==========================
-@app.route('/test', methods=['GET'])
+@app.route("/test")
 def test():
-    send_telegram_message("🔔 اختبار ناجح يا نور الدين!")
-    return "تم الإرسال بنجاح", 200
+    send_message(os.getenv("TELEGRAM_CHAT_ID"), "✅ الاختبار ناجح يا نور الدين!")
+    return "OK"
 
-
-# ==========================
-#   RUN SERVER
-# ==========================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run()
