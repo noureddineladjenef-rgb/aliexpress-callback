@@ -24,6 +24,8 @@ def generate_signature(secret, params):
 
 # إرسال رسالة إلى تيليجرام
 def send_telegram_message(text, parse_mode="Markdown"):
+    print(f"📤 رابط تيليجرام المستخدم: {TELEGRAM_API}")
+    print(f"📤 معرف الشات: {TELEGRAM_CHAT_ID}")
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": text,
@@ -33,6 +35,7 @@ def send_telegram_message(text, parse_mode="Markdown"):
     try:
         response = requests.post(TELEGRAM_API, json=payload, timeout=5)
         print(f"✅ Telegram status: {response.status_code}")
+        print(f"📨 Telegram response: {response.text}")
         return response.status_code == 200
     except Exception as e:
         print(f"❌ Telegram error: {e}")
@@ -86,12 +89,4 @@ def callback():
 
     return 'OK', 200
 
-# نقطة اختبار
-@app.route('/test', methods=['GET'])
-def test_telegram():
-    msg = "✅ اختبار متعدد الروابط من /test يا نور الدين"
-    send_telegram_message(msg)
-    return "تم الإرسال"
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+# نقطة—
